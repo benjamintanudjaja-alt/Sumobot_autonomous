@@ -118,3 +118,41 @@ Pengambilan keputusan didasarkan pada kombinasi deteksi ketiga sensor:
 | **0, 1, 1** | `STATE_ATTACK_RIGHT` | `+50` | `+45` | **Maju melengkung ke kanan** (musuh agak condong ke kanan). |
 | **1, 0, 0** | `STATE_TURN_LEFT` | `-90` | `+90` | **Putar di tempat ke kiri** mencari/mengunci posisi musuh. |
 | **0, 0, 1** | `STATE_TURN_RIGHT` | `+90` | `-90` | **Putar di tempat ke kanan** mencari/mengunci posisi musuh. |
+
+---
+
+### 6. Future Updates (Roadmap)
+
+#### 6.1. Penambahan 3x Sensor ToF VL53L1X Tambahan (Total 6 Sensor)
+Untuk memberikan cakupan deteksi 360° penuh terhadap musuh di sekeliling robot, direncanakan penambahan 3 sensor ToF baru:
+- **Posisi Tambahan:** Samping Kiri, Samping Kanan, dan Belakang.
+- **Komunikasi I2C:** Menggunakan hardware bus kedua ESP32, yaitu **`I2C1`** (misalnya SDA/SCL pada pin yang didefinisikan bebas via `TwoWire(1)`).
+- **Arsitektur Shared XSHUT (Hemat Pin GPIO):**
+  - Ketiga pin XSHUT yang sudah ada (**GPIO 25, 33, 32**) digunakan bersama secara paralel untuk mengontrol pin XSHUT sensor pada `I2C0` dan `I2C1`.
+  - **Prinsip Kerja:**
+    - Pin XSHUT 0 (`GPIO 25`) mengontrol: Sensor Depan-Kiri (`I2C0`) & Sensor Samping-Kiri (`I2C1`).
+    - Pin XSHUT 1 (`GPIO 33`) mengontrol: Sensor Depan-Tengah (`I2C0`) & Sensor Belakang (`I2C1`).
+    - Pin XSHUT 2 (`GPIO 32`) mengontrol: Sensor Depan-Kanan (`I2C0`) & Sensor Samping-Kanan (`I2C1`).
+  - Karena sensor berada pada bus I2C fisik terpisah (`I2C0` dan `I2C1`), tidak terjadi tabrakan addressing saat pin XSHUT dinyalakan bersamaan. Kedua bus dapat melakukan proses inisialisasi dan addressing secara simultan/independen.
+
+| Pin XSHUT (Shared) | Sensor di `I2C0` (Bus Depan) | Sensor di `I2C1` (Bus Tambahan) |
+| :---: | :--- | :--- |
+| **GPIO 25** | Depan-Kiri (Address: `0x2A`) | Samping-Kiri (Address: `0x2A`) |
+| **GPIO 33** | Depan-Tengah (Address: `0x2B`) | Belakang (Address: `0x2B`) |
+| **GPIO 32** | Depan-Kanan (Address: `0x2C`) | Samping-Kanan (Address: `0x2C`) |
+
+#### 6.2. Penambahan 4x Sensor IR LED Deteksi Garis Arena (Line Sensors)
+Untuk mendeteksi garis batas putih (border) pada ring Dohyo dan mencegah robot jatuh keluar arena (*suicide ring-out*):
+- **Tipe Sensor:** 4 unit Sensor Reflektansi IR (Digital Output/Input).
+- **Antarmuka:** Digital Input (GPIO ESP32) membaca logika HIGH / LOW (garis putih vs lantai hitam).
+- **Posisi Pemasangan:**
+  1. Depan Kiri (*Front-Left*)
+  2. Depan Kanan (*Front-Right*)
+  3. Belakang Kiri (*Rear-Left*)
+  4. Belakang Kanan (*Rear-Right*)
+- **Hierarki Kontrol & Emergency Override:**
+  - Pembacaan sensor garis memiliki **prioritas interupsi tertinggi (Reflex Safety Override)** di atas state machine deteksi musuh ToF.
+  - Jika salah satu atau lebih sensor garis mendeteksi batas putih:
+    - Garis depan terpicu: Robot segera mundur cepat (*reverse escape*), lalu berputar.
+    - Garis belakang terpicu: Robot segera maju ke depan.
+    - Setelah bermanuver menghindar dari tepi dan kembali ke area aman, kontrol dikembalikan ke *Autonomous Decision Engine* ToF.
